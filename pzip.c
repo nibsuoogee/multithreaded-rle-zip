@@ -20,7 +20,7 @@
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-int num_files_ready_for_concat = 0;
+int concat_signal = 0;
 int num_files_completed = 0;
 int *files_readiness_to_concat;
 int num_files_glob;
@@ -35,6 +35,7 @@ typedef struct {
     char *file_name;
     char **comp_result_buffers; // will be of length num_threads, storing pointers to intermediate compression results from different threads 
     size_t *buffer_offsets;
+    int *finished_threads;
 } mmapped_vars;
 
 typedef struct {
@@ -65,10 +66,6 @@ void *compress(void *args)
     int offset_in_mvar = actual_args->offset_in_first_addr;
 
     //current_mvar_vars = &(actual_args->mvars[current_mvar]);
-
-    // allocate space in the intermediates buffer for given file
-    actual_args->mvars[current_mvar].comp_result_buffers;
-    actual_args->mvars[current_mvar].buffer_offsets[thread_id];
 
     while (actual_args->bytes > 0){
         if (actual_args->mvars[current_mvar].comp_result_buffers[thread_id] == NULL) {
@@ -110,9 +107,8 @@ void *compress(void *args)
             printf("Tid %d: prev_c: %c\n", thread_id, prev_c);
             
             pthread_mutex_lock(&mutex);
-            printf("Thread %d: file %d ready for concat\n", thread_id, current_mvar);
-            num_files_ready_for_concat++;
-            files_readiness_to_concat[current_mvar] = 1;
+            actual_args->mvars[current_mvar].finished_threads[thread_id]++; // thread's portion of file done/last portion
+            concat_signal = 1;
             pthread_cond_broadcast(&cond); // Signal all waiting threads
             pthread_mutex_unlock(&mutex);
             
@@ -147,6 +143,13 @@ void *compress(void *args)
             *buffer_offset += sizeof(count_c);
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &prev_c, sizeof(prev_c));
             *buffer_offset += sizeof(prev_c);
+
+            pthread_mutex_lock(&mutex);
+            actual_args->mvars[current_mvar].finished_threads[thread_id]++; // thread's portion of file done
+            concat_signal = 1;
+            pthread_cond_broadcast(&cond); // Signal all waiting threads
+            pthread_mutex_unlock(&mutex);
+            
         }
         
     }
@@ -156,13 +159,19 @@ void *compress(void *args)
     while (num_files_completed < num_files_glob) {
         pthread_mutex_lock(&mutex);
 
-        while (num_files_ready_for_concat == 0 && (num_files_completed < num_files_glob)) {
+        while (concat_signal == 0 && num_files_completed < num_files_glob) {
             pthread_cond_wait(&cond, &mutex);
         }
+        concat_signal = 0;
         if (num_files_completed < num_files_glob) {
             for (int i = 0; i < num_files_glob; i++){
-                if (files_readiness_to_concat[i] == 1) {
-                    files_readiness_to_concat[i] = 0;
+                int completion_sum = 0;
+                for (int j = 0; j < num_threads_glob; j++){
+                    completion_sum += actual_args->mvars[i].finished_threads[j];
+                    //printf("Thread %d, mvars %d, completion sum t%d: %d\n", thread_id, i, j, completion_sum);
+                }
+                if (completion_sum == 0) {
+                    actual_args->mvars[i].finished_threads[0]++; // invalidate concatenation of chosen file for other threads
                     
                     char outputFilename[256];  // Adjust the size as needed
                     snprintf(outputFilename, sizeof(outputFilename), "%s.z", actual_args->mvars[i].file_name);
@@ -184,10 +193,8 @@ void *compress(void *args)
                     fclose(outputFile);
 
                     num_files_completed++;
-                    num_files_ready_for_concat--;
                     printf("Thread %d performed action on file %d\n", actual_args->thread_id, i);
                     printf("num_files_completed: %d\n",num_files_completed);
-                    printf("num_files_ready_for_concat: %d\n",num_files_ready_for_concat);
                 }
             }
         }
@@ -196,57 +203,13 @@ void *compress(void *args)
     }
     return NULL;
 }
-/*
-void *concat(void *args) {
-    thread_compress_struct *actual_args = args;
-    printf("now thread concatting\n");
-    
-    while (num_files_completed < num_files_glob) {
-        pthread_mutex_lock(&mutex);
 
-        while (a_file_is_ready_for_concat != 1) {
-            pthread_cond_wait(&cond, &mutex);
-        }
-
-        for (int i = 0; i < num_files_glob; i++){
-            if (files_readiness_to_concat[i] == 1) {
-                
-                char outputFilename[256];  // Adjust the size as needed
-                snprintf(outputFilename, sizeof(outputFilename), "%s.z", actual_args->mvars[i].file_name);
-
-                FILE *outputFile = fopen(outputFilename, "wb");
-                if (outputFile == NULL) {
-                    perror("Error opening output file");
-                    exit(EXIT_FAILURE);
-                }
-
-                for (int thread = 0; thread < num_threads_glob; thread++){
-                    if (actual_args->mvars[i].comp_result_buffers[thread] != NULL) {
-                        printf("file %d, thread %d:", i, thread);
-                        fwrite(actual_args->mvars[i].comp_result_buffers[thread], (int)actual_args->mvars[i].buffer_offsets[thread], 1, outputFile); // outputFile
-                        printf("\n");
-                    }
-                }
-
-                fclose(outputFile);
-
-                printf("Thread %d performed action on file index %d\n", actual_args->thread_id, i);
-            }
-        }
-
-        pthread_mutex_unlock(&mutex);
-    }
-    
-    return NULL;
-}
-*/
 int main(int argc, char** argv, char *envp[])
 {
     clock_t start, end;
     double cpu_time_used;
     start = clock();
 
-    FILE *zfptr;
     int fd;
     int num_files = argc-1;
     num_files_glob = num_files; 
@@ -319,6 +282,15 @@ int main(int argc, char** argv, char *envp[])
             perror("pthread_create");
             exit(EXIT_FAILURE);
         }
+
+        mvars[file-1].finished_threads = (int*)malloc(sizeof(int) * (num_threads));
+        if (mvars[file-1].finished_threads == NULL) {
+            perror("malloc()");
+            exit(EXIT_FAILURE);
+        }
+        for (int i = 0; i < num_files; ++i) {
+            mvars[file-1].finished_threads[i] = 0;
+        }
     }
 
     //printf("total_bytes: %d\n", total_bytes);
@@ -354,14 +326,21 @@ int main(int argc, char** argv, char *envp[])
             args->range_in_mvars_array_end = current_mvar; // shift the last file thread is responsible for
             if (mvars[current_mvar].sb.st_size - offset_into_next_mvar <= bytes_left_for_thread) {
                 bytes_left_for_thread -= (mvars[current_mvar].sb.st_size - offset_into_next_mvar); // file mapping allocated to thread
+
+                mvars[current_mvar].finished_threads[i]--; // decrement number of threads that must work on this input file
+
                 current_mvar++; // jump to next file mapping
                 offset_into_next_mvar = 0; // previously partially completed file now fully completed
             } else {
                 offset_into_next_mvar += bytes_left_for_thread; // thread has no more byte quota = 
                 // continue to next thread, store partial compression offset completed by current thread
                 bytes_left_for_thread = 0;
+
+                mvars[current_mvar].finished_threads[i]--; // decrement number of threads that must work on this input file
             }
             //printf("T%d: end bytes_left_for_thread: %d\n", i+1, bytes_left_for_thread);
+
+            
         }
         
         if(pthread_create(&fids[i], NULL, compress, args) != 0) {
@@ -369,56 +348,27 @@ int main(int argc, char** argv, char *envp[])
             perror("pthread_create");
             exit(1);
         }
-        
-    }
-    
-    for (int i = 0; i < num_threads; i++){
-        if (pthread_join(fids[i], NULL) != 0) {
-            perror("pthread_join");
-            exit(1);
-        }
         /*
-        thread_compress_struct *args_conc = malloc(sizeof *args_conc);
-        if (args_conc == NULL) {
-            perror("args_conc");
-            exit(EXIT_FAILURE);
-        }
-        args_conc->thread_id = i;
-        args_conc->mvars = mvars;
-        if(pthread_create(&concat_fids[i], NULL, concat, args_conc) != 0) {
-            perror("pthread_create");
-            exit(1);
-        }
-        if (pthread_join(concat_fids[i], NULL) != 0) {
-            perror("pthread_join");
-            exit(1);
+        for (int file = 0; file < num_files; file++){
+            printf("Thread %d, file %d, completion %d\n", i+1, file+1, mvars[file].finished_threads[i]);
         }
         */
     }
 
-    printf("\n");
-    /*
-    for (int file = 1; file < argc; file++){
-        char outputFilename[256];  // Adjust the size as needed
-        snprintf(outputFilename, sizeof(outputFilename), "%s.z", mvars[file-1].file_name);
-
-        FILE *outputFile = fopen(outputFilename, "wb");
-        if (outputFile == NULL) {
-            perror("Error opening output file");
-            exit(EXIT_FAILURE);
+    for (int i = 0; i < num_threads; i++){
+        
+        if (pthread_join(fids[i], NULL) != 0) {
+            perror("pthread_join");
+            exit(1);
         }
-
-        for (int thread = 0; thread < num_threads; thread++){
-            if (mvars[file-1].comp_result_buffers[thread] != NULL) {
-                printf("file %d, thread %d:", file, thread);
-                fwrite(mvars[file-1].comp_result_buffers[thread], (int)mvars[file-1].buffer_offsets[thread], 1, outputFile); // outputFile
-                printf("\n");
-            }
-        }
-
-        fclose(outputFile);
     }
-    */
+
+    printf("After\n");
+    for (int i = 0; i < num_threads; i++){
+        for (int file = 0; file < num_files; file++){
+            printf("Thread %d, file %d, completion %d\n", i+1, file+1, mvars[file].finished_threads[i]);
+        }
+    }
 
     for (int file = 1; file < argc; file++){
         munmap(mvars[file-1].addr, mvars[file-1].length + mvars[file-1].offset - mvars[file-1].pa_offset);
