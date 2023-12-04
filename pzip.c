@@ -27,14 +27,13 @@ int num_files_glob;
 int num_threads_glob;
 
 typedef struct {
-    char *addr;
-    off_t offset, pa_offset, current;
-    size_t length;
-    ssize_t s;
-    struct stat sb;
-    char *file_name;
+    char *addr; // make copy
+    off_t offset, pa_offset, current; // make copies
+    size_t length; // make copy
+    struct stat sb; // make copy
+    char *file_name; // make copy
     char **comp_result_buffers; // will be of length num_threads, storing pointers to intermediate compression results from different threads 
-    size_t *buffer_offsets;
+    size_t *buffer_lengths;
     int *finished_threads;
 } mmapped_vars;
 
@@ -55,8 +54,7 @@ void *compress(void *args)
     uint32_t count_c = 0;
     thread_compress_struct *actual_args = args;
     int thread_id = actual_args->thread_id;
-    size_t *buffer_offset;
-    mmapped_vars *current_mvar_vars;
+    size_t *buffer_length;
     
     // starting from mmapped_vars, index range_in_mvars_array_start
     // consume bytes (thread quota units) until sb.st_size or quota reaches zero
@@ -64,8 +62,6 @@ void *compress(void *args)
     
     int current_mvar = actual_args->range_in_mvars_array_start;
     int offset_in_mvar = actual_args->offset_in_first_addr;
-
-    //current_mvar_vars = &(actual_args->mvars[current_mvar]);
 
     while (actual_args->bytes > 0){
         if (actual_args->mvars[current_mvar].comp_result_buffers[thread_id] == NULL) {
@@ -75,8 +71,8 @@ void *compress(void *args)
                 perror("malloc");
                 exit(EXIT_FAILURE);
             }
-            buffer_offset = &(actual_args->mvars[current_mvar].buffer_offsets[thread_id]);
-            *buffer_offset = 0;
+            buffer_length = &(actual_args->mvars[current_mvar].buffer_lengths[thread_id]);
+            *buffer_length = 0;
         }
         if (actual_args->mvars[current_mvar].sb.st_size - offset_in_mvar <= actual_args->bytes) {
             actual_args->bytes -= (actual_args->mvars[current_mvar].sb.st_size - offset_in_mvar); // file mapping allocated to thread
@@ -90,20 +86,20 @@ void *compress(void *args)
                 if(c == prev_c){ // if same, increment count_c
                     count_c++;
                 } else { // if different, add count_c and c to output
-                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &count_c, sizeof(count_c));
-                    *buffer_offset += sizeof(count_c);
-                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &prev_c, sizeof(prev_c));
-                    *buffer_offset += sizeof(prev_c);
+                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &count_c, sizeof(count_c));
+                    *buffer_length += sizeof(count_c);
+                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &prev_c, sizeof(prev_c));
+                    *buffer_length += sizeof(prev_c);
                     printf("Tid %d: prev_c: %c\n", thread_id, prev_c);
                     prev_c = c;
                     count_c = 1;
                 }
                 offset_in_mvar++;
             }
-            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &count_c, sizeof(count_c));
-            *buffer_offset += sizeof(count_c);
-            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &prev_c, sizeof(prev_c));
-            *buffer_offset += sizeof(prev_c);
+            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &count_c, sizeof(count_c));
+            *buffer_length += sizeof(count_c);
+            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &prev_c, sizeof(prev_c));
+            *buffer_length += sizeof(prev_c);
             printf("Tid %d: prev_c: %c\n", thread_id, prev_c);
             
             pthread_mutex_lock(&mutex);
@@ -128,10 +124,10 @@ void *compress(void *args)
                 if(c == prev_c){ // if same, increment count_c
                     count_c++;
                 } else { // if different, add count_c and c to output
-                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &count_c, sizeof(count_c));
-                    *buffer_offset += sizeof(count_c);
-                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &prev_c, sizeof(prev_c));
-                    *buffer_offset += sizeof(prev_c);
+                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &count_c, sizeof(count_c));
+                    *buffer_length += sizeof(count_c);
+                    memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &prev_c, sizeof(prev_c));
+                    *buffer_length += sizeof(prev_c);
                     printf("Tid %d: prev_c: %c\n", thread_id, prev_c);
 
                     prev_c = c;
@@ -139,10 +135,10 @@ void *compress(void *args)
                 }
                 offset_in_mvar++;
             }
-            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &count_c, sizeof(count_c));
-            *buffer_offset += sizeof(count_c);
-            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_offset, &prev_c, sizeof(prev_c));
-            *buffer_offset += sizeof(prev_c);
+            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &count_c, sizeof(count_c));
+            *buffer_length += sizeof(count_c);
+            memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + *buffer_length, &prev_c, sizeof(prev_c));
+            *buffer_length += sizeof(prev_c);
 
             pthread_mutex_lock(&mutex);
             actual_args->mvars[current_mvar].finished_threads[thread_id]++; // thread's portion of file done
@@ -185,7 +181,7 @@ void *compress(void *args)
                     for (int thread = 0; thread < num_threads_glob; thread++){
                         if (actual_args->mvars[i].comp_result_buffers[thread] != NULL) {
                             //printf("file %d, thread %d:", i, thread);
-                            fwrite(actual_args->mvars[i].comp_result_buffers[thread], (int)actual_args->mvars[i].buffer_offsets[thread], 1, outputFile); // outputFile
+                            fwrite(actual_args->mvars[i].comp_result_buffers[thread], (int)actual_args->mvars[i].buffer_lengths[thread], 1, outputFile); // outputFile
                             //printf("\n");
                         }
                     }
@@ -218,7 +214,6 @@ int main(int argc, char** argv, char *envp[])
     num_threads_glob = num_threads; 
     //printf("num_threads: %d\n",num_threads);
     pthread_t fids[num_threads];
-    pthread_t concat_fids[num_threads];
 
     int total_bytes = 0;
     int bytes_per_thread, remainingBytes;
@@ -277,10 +272,13 @@ int main(int argc, char** argv, char *envp[])
             mvars[file-1].comp_result_buffers[thread] = NULL;
         }
 
-        mvars[file-1].buffer_offsets = malloc(sizeof(size_t));
-        if (mvars[file-1].buffer_offsets == NULL) {
+        mvars[file-1].buffer_lengths = malloc(sizeof(size_t) * num_threads);
+        if (mvars[file-1].buffer_lengths == NULL) {
             perror("pthread_create");
             exit(EXIT_FAILURE);
+        }
+        for (int i = 0; i < num_threads; ++i) {
+            mvars[file-1].buffer_lengths[i] = 0;
         }
 
         mvars[file-1].finished_threads = (int*)malloc(sizeof(int) * (num_threads));
