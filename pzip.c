@@ -71,8 +71,8 @@ void *compress(void *args)
     int offset_in_mvar = actual_args->offset_in_first_addr;
 
     // make copies of contentious vars
-
-    if (thread_id != 3) { // makes sure all threads are ready.. REMOVE THIS
+    
+    if (thread_id != num_threads_glob-1) { // makes sure all threads are ready.. REMOVE THIS
         pthread_mutex_lock(&mutex);
         while (go != 1)
         {
@@ -88,13 +88,14 @@ void *compress(void *args)
         pthread_mutex_unlock(&mutex);
     }
     
-    
     pthread_mutex_lock(&mutex);
+    printf("doing copies...\n");
     memcpy(&length, &actual_args->mvars[current_mvar].length, sizeof(size_t));
     char *addr = actual_args->mvars[current_mvar].addr;
     memcpy(&st_size, &actual_args->mvars[current_mvar].sb.st_size, sizeof(off_t));
     memcpy(&offset, &actual_args->mvars[current_mvar].offset, sizeof(off_t));
     memcpy(&pa_offset, &actual_args->mvars[current_mvar].pa_offset, sizeof(off_t));
+    printf("finished copies\n");
     pthread_mutex_unlock(&mutex);
     
     while (actual_args->bytes > 0)
@@ -108,6 +109,8 @@ void *compress(void *args)
             }
             buffer_length = 0;
             current_buffer_max = st_size;
+            printf("AFTER MALLOC T%d, file 0 .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));
+
         }
 
         if (st_size - offset_in_mvar <= actual_args->bytes)
@@ -126,10 +129,12 @@ void *compress(void *args)
                 }
                 else
                 { // if different, add count_c and c to output
+                    printf("before count_c T%d, file % .comp_result_buffers[thread_id] %p\n", thread_id, current_mvar, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));
                     memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &count_c, sizeof(count_c));
                     buffer_length += sizeof(count_c);
                     memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &prev_c, sizeof(prev_c));
                     buffer_length += sizeof(prev_c);
+                    printf("T%d, .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));
                     prev_c = c;
                     count_c = 1;
                     // increase buffer size if close to full..
@@ -151,12 +156,21 @@ void *compress(void *args)
                 offset_in_mvar++;
                 printf("T%d buffer_length: %ld\n", thread_id, buffer_length);
             }
+            printf("before count_c T%d, file % .comp_result_buffers[thread_id] %p\n", thread_id, current_mvar, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &count_c, sizeof(count_c));
             buffer_length += sizeof(count_c);
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &prev_c, sizeof(prev_c));
             buffer_length += sizeof(prev_c);
             actual_args->mvars[current_mvar].buffer_lengths[thread_id] = buffer_length;
-
+            printf("T%d, .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));
+            printf("T%d, .finished_threads[thread_id] %p\n", thread_id, (void*)(&actual_args->mvars[current_mvar].finished_threads[thread_id]));
+            
+            printf("T%d, file 0 .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[0].comp_result_buffers[thread_id] + buffer_length));
+            printf("T%d, file 0 .finished_threads[thread_id] %p\n", thread_id, (void*)(&actual_args->mvars[0].finished_threads[thread_id]));
+            
+            printf("T%d, file 1 .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[1].comp_result_buffers[thread_id] + buffer_length));
+            printf("T%d, file 1 .finished_threads[thread_id] %p\n", thread_id, (void*)(&actual_args->mvars[1].finished_threads[thread_id]));
+            
             pthread_mutex_lock(&mutex);
             actual_args->mvars[current_mvar].finished_threads[thread_id]++; // thread's portion of file done/last portion
             concat_signal = 1;
@@ -168,11 +182,13 @@ void *compress(void *args)
 
             // make copies of contentious vars
             pthread_mutex_lock(&mutex);
+            printf("A\n");
             memcpy(&length, &actual_args->mvars[current_mvar].length, sizeof(size_t));
             addr = actual_args->mvars[current_mvar].addr;
             memcpy(&st_size, &actual_args->mvars[current_mvar].sb.st_size, sizeof(off_t));
             memcpy(&offset, &actual_args->mvars[current_mvar].offset, sizeof(off_t));
             memcpy(&pa_offset, &actual_args->mvars[current_mvar].pa_offset, sizeof(off_t));
+            printf("B\n");
             pthread_mutex_unlock(&mutex);
         }
         else
@@ -197,7 +213,7 @@ void *compress(void *args)
                     buffer_length += sizeof(count_c);
                     memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &prev_c, sizeof(prev_c));
                     buffer_length += sizeof(prev_c);
-
+                    printf("T%d, .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));   
                     prev_c = c;
                     count_c = 1;
 
@@ -219,11 +235,19 @@ void *compress(void *args)
                 offset_in_mvar++;
                 printf("T%d buffer_length: %ld\n", thread_id, buffer_length);
             }
+            printf("before count_c T%d, file % .comp_result_buffers[thread_id] %p\n", thread_id, current_mvar, (void*)(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length));
+
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &count_c, sizeof(count_c));
             buffer_length += sizeof(count_c);
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &prev_c, sizeof(prev_c));
             buffer_length += sizeof(prev_c);
             actual_args->mvars[current_mvar].buffer_lengths[thread_id] = buffer_length;
+
+            printf("T%d, file 0 .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[0].comp_result_buffers[thread_id] + buffer_length));
+            printf("T%d, file 0 .finished_threads[thread_id] %p\n", thread_id, (void*)(&actual_args->mvars[0].finished_threads[thread_id]));
+            
+            printf("T%d, file 1 .comp_result_buffers[thread_id] %p\n", thread_id, (void*)(actual_args->mvars[1].comp_result_buffers[thread_id] + buffer_length));
+            printf("T%d, file 1 .finished_threads[thread_id] %p\n", thread_id, (void*)(&actual_args->mvars[1].finished_threads[thread_id]));
 
             pthread_mutex_lock(&mutex);
             actual_args->mvars[current_mvar].finished_threads[thread_id]++; // thread's portion of file done
@@ -235,7 +259,6 @@ void *compress(void *args)
 
     // thread has completed its own compression task, moves on to concatenation of ready intermediate buffers
     //if (thread_id == 0) {
-
     
     while (num_files_completed < num_files_glob)
     {
@@ -310,7 +333,7 @@ int main(int argc, char **argv, char *envp[])
     int num_files = argc - 1;
     num_files_glob = num_files;
     mmapped_vars mvars[num_files]; // store map and info for each input file
-    int num_threads = get_nprocs();
+    int num_threads = 2;//get_nprocs();
     num_threads_glob = num_threads;
     pthread_t fids[num_threads];
 
@@ -359,6 +382,7 @@ int main(int argc, char **argv, char *envp[])
             handle_error("malloc");
         }
         close(fd);
+        printf("mvars[%d - 1].comp_result_buffers %p\n", file, (void*)mvars[file - 1].comp_result_buffers);
 
         for (int thread = 0; thread < num_threads; thread++)
         {
@@ -374,7 +398,7 @@ int main(int argc, char **argv, char *envp[])
         {
             mvars[file - 1].buffer_lengths[i] = 0;
         }
-
+        printf("mvars[%d - 1].buffer_lengths %p\n", file, (void*)mvars[file - 1].buffer_lengths);
         mvars[file - 1].finished_threads = (int *)malloc(sizeof(int) * (num_threads));
         if (mvars[file - 1].finished_threads == NULL)
         {
