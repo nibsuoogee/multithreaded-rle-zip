@@ -166,8 +166,9 @@ void *compress(void *args)
         }
         else
         {
-            int limit_in_mvar = actual_args->bytes; // thread has no more byte quota =
+            int limit_in_mvar = actual_args->bytes + offset_in_mvar; // thread has no more byte quota =
             // continue to next thread, store partial compression offset completed by current thread
+            
             actual_args->bytes = 0;
 
             //count_c = 1;
@@ -282,7 +283,7 @@ int main(int argc, char **argv, char *envp[])
     int num_files = argc - 1;
     num_files_glob = num_files;
     mmapped_vars mvars[num_files]; // store map and info for each input file
-    int num_threads = 1;//get_nprocs();
+    int num_threads = get_nprocs();
     num_threads_glob = num_threads;
     pthread_t fids[num_threads];
 
