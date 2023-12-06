@@ -228,7 +228,14 @@ void *compress(void *args)
                     actual_args->mvars[i].finished_threads[0]++; // invalidate concatenation of chosen file for other threads
                     num_files_completed++;
                     char outputFilename[256];
-                    snprintf(outputFilename, sizeof(outputFilename), "%s.unzipped", actual_args->mvars[i].file_name);
+
+                    snprintf(outputFilename, sizeof(outputFilename), "%s", actual_args->mvars[i].file_name);
+                    size_t len = strlen(outputFilename);
+                    size_t suffixLen = strlen(".z");
+                    if (len >= suffixLen && strcmp(outputFilename + len - suffixLen, ".z") == 0) {
+                        outputFilename[len - suffixLen] = '\0';
+                    }
+
                     FILE *outputFile = fopen(outputFilename, "wb");
                     if (outputFile == NULL)
                     {
@@ -272,21 +279,20 @@ int main(int argc, char **argv, char *envp[])
 
     if (argc < 2)
     {
-        printf("usage: pzip <input> > <output>\n");
+        printf("usage: punzip <input file 1> <input file 2> ... <input file M>\n");
         return (1);
     }
 
     // for loop mmap() over files
-    for (int file = 0; file < argc; file++)
+    for (int file = 0; file < argc-1; file++)
     {
-
-        fd = open(argv[file -1], O_RDONLY);
+        fd = open(argv[file + 1], O_RDONLY);
         if (fd == -1)
             handle_error("open");
 
         if (fstat(fd, &mvars[file].sb) == -1)
             handle_error("fstat");
-
+            
         mvars[file].offset = 0;
         mvars[file].pa_offset = mvars[file].offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
         /* offset for mmap() must be page aligned */
@@ -304,7 +310,7 @@ int main(int argc, char **argv, char *envp[])
         if (mvars[file].addr == MAP_FAILED)
             handle_error("mmap");
 
-        mvars[file].file_name = argv[file];
+        mvars[file].file_name = argv[file + 1];
 
         mvars[file].comp_result_buffers = malloc(num_threads * sizeof(char *));
         if (mvars[file].comp_result_buffers == NULL)
@@ -313,7 +319,7 @@ int main(int argc, char **argv, char *envp[])
         }
         close(fd);
 
-        for (int thread = 0; thread < num_threads; thread++)
+        for (int thread = 0; thread < num_threads - 1; thread++)
         {
             mvars[file].comp_result_buffers[thread] = NULL;
         }
@@ -323,7 +329,7 @@ int main(int argc, char **argv, char *envp[])
         {
             handle_error("malloc");
         }
-        for (int i = 0; i < num_threads; ++i)
+        for (int i = 0; i < num_threads - 1; ++i)
         {
             mvars[file].buffer_lengths[i] = 0;
         }
@@ -332,7 +338,7 @@ int main(int argc, char **argv, char *envp[])
         {
             handle_error("malloc");
         }
-        for (int i = 0; i < num_threads; ++i)
+        for (int i = 0; i < num_threads - 1; ++i)
         {
             mvars[file].finished_threads[i] = 0;
         }
@@ -396,11 +402,11 @@ int main(int argc, char **argv, char *envp[])
         }
     }
 
-    for (int file = 0; file < argc; file++)
+    for (int file = 0; file < argc - 1; file++)
     {
         munmap(mvars[file].addr, mvars[file].length + mvars[file].offset - mvars[file].pa_offset);
     }
-    for (int file = 0; file < argc; file++)
+    for (int file = 0; file < argc - 1; file++)
     {
         free(mvars[file].comp_result_buffers);
         free(mvars[file].buffer_lengths);
