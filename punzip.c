@@ -124,7 +124,6 @@ void *compress(void *args)
                 for (size_t i = 0; i < count_c; i++) {
                     memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &c, sizeof(c));
                     buffer_length += sizeof(c);
-                    //printf("T%d buffer_length: %ld\n", thread_id, buffer_length);
                 }
                 // increase buffer size if close to full..
                 if (buffer_length > current_buffer_max * 0.7)
@@ -278,37 +277,37 @@ int main(int argc, char **argv, char *envp[])
     }
 
     // for loop mmap() over files
-    for (int file = 1; file < argc; file++)
+    for (int file = 0; file < argc; file++)
     {
 
-        fd = open(argv[file], O_RDONLY);
+        fd = open(argv[file -1], O_RDONLY);
         if (fd == -1)
             handle_error("open");
 
-        if (fstat(fd, &mvars[file - 1].sb) == -1)
+        if (fstat(fd, &mvars[file].sb) == -1)
             handle_error("fstat");
 
-        mvars[file - 1].offset = 0;
-        mvars[file - 1].pa_offset = mvars[file - 1].offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
+        mvars[file].offset = 0;
+        mvars[file].pa_offset = mvars[file].offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
         /* offset for mmap() must be page aligned */
 
-        if (mvars[file - 1].offset >= mvars[file - 1].sb.st_size)
+        if (mvars[file].offset >= mvars[file].sb.st_size)
         {
             handle_error("offset is past end of file\n");
         }
-        total_bytes += mvars[file - 1].sb.st_size;
+        total_bytes += mvars[file].sb.st_size;
 
-        mvars[file - 1].length = mvars[file - 1].sb.st_size - mvars[file - 1].offset;
+        mvars[file].length = mvars[file].sb.st_size - mvars[file].offset;
 
-        mvars[file - 1].addr = mmap(NULL, mvars[file - 1].length + mvars[file - 1].offset - mvars[file - 1].pa_offset, PROT_READ,
-                                    MAP_PRIVATE, fd, mvars[file - 1].pa_offset);
-        if (mvars[file - 1].addr == MAP_FAILED)
+        mvars[file].addr = mmap(NULL, mvars[file].length + mvars[file].offset - mvars[file].pa_offset, PROT_READ,
+                                    MAP_PRIVATE, fd, mvars[file].pa_offset);
+        if (mvars[file].addr == MAP_FAILED)
             handle_error("mmap");
 
-        mvars[file - 1].file_name = argv[file];
+        mvars[file].file_name = argv[file];
 
-        mvars[file - 1].comp_result_buffers = malloc(num_threads * sizeof(char *));
-        if (mvars[file - 1].comp_result_buffers == NULL)
+        mvars[file].comp_result_buffers = malloc(num_threads * sizeof(char *));
+        if (mvars[file].comp_result_buffers == NULL)
         {
             handle_error("malloc");
         }
@@ -316,28 +315,27 @@ int main(int argc, char **argv, char *envp[])
 
         for (int thread = 0; thread < num_threads; thread++)
         {
-            mvars[file - 1].comp_result_buffers[thread] = NULL;
+            mvars[file].comp_result_buffers[thread] = NULL;
         }
 
-        mvars[file - 1].buffer_lengths = malloc(sizeof(size_t) * num_threads);
-        if (mvars[file - 1].buffer_lengths == NULL)
+        mvars[file].buffer_lengths = malloc(sizeof(size_t) * num_threads);
+        if (mvars[file].buffer_lengths == NULL)
         {
             handle_error("malloc");
         }
         for (int i = 0; i < num_threads; ++i)
         {
-            mvars[file - 1].buffer_lengths[i] = 0;
+            mvars[file].buffer_lengths[i] = 0;
         }
-        mvars[file - 1].finished_threads = (int *)malloc(sizeof(int) * (num_threads));
-        if (mvars[file - 1].finished_threads == NULL)
+        mvars[file].finished_threads = (int *)malloc(sizeof(int) * (num_threads));
+        if (mvars[file].finished_threads == NULL)
         {
             handle_error("malloc");
         }
         for (int i = 0; i < num_threads; ++i)
         {
-            mvars[file - 1].finished_threads[i] = 0;
+            mvars[file].finished_threads[i] = 0;
         }
-        printf("File bytes: %ld\n", mvars[file - 1].sb.st_size);
     }
     count_plus_ascii_encoded_pairs = total_bytes / 5;
     encoded_pairs_per_thread = count_plus_ascii_encoded_pairs / num_threads;
@@ -398,15 +396,15 @@ int main(int argc, char **argv, char *envp[])
         }
     }
 
-    for (int file = 1; file < argc; file++)
+    for (int file = 0; file < argc; file++)
     {
-        munmap(mvars[file - 1].addr, mvars[file - 1].length + mvars[file - 1].offset - mvars[file - 1].pa_offset);
+        munmap(mvars[file].addr, mvars[file].length + mvars[file].offset - mvars[file].pa_offset);
     }
-    for (int file = 1; file < argc; file++)
+    for (int file = 0; file < argc; file++)
     {
-        free(mvars[file - 1].comp_result_buffers);
-        free(mvars[file - 1].buffer_lengths);
-        free(mvars[file - 1].finished_threads);
+        free(mvars[file].comp_result_buffers);
+        free(mvars[file].buffer_lengths);
+        free(mvars[file].finished_threads);
     }
 
     end = clock();
