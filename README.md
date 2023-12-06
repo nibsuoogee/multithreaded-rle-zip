@@ -4,6 +4,23 @@ A command line utility C program which utilizes N threads (decided by available 
 
 The compression algorithm is based on lossless Run-length encoding (RLE), which condenses repeated characters into a five-byte chunk, comprised of a four-byte uint_32 to store the number of repeat characters, and one char to store the character itself.
 
+# Use
+
+`./pzip file.txt foo.txt bar.txt`
+```
+(created files)
+file.txt.z
+foo.txt.z
+bar.txt.z
+```
+`./punzip file.txt.z foo.txt.z bar.txt.z`
+```
+(created files)
+file.txt
+foo.txt
+bar.txt
+```
+
 # Pseudocode/abstract representation of the finished pzip/punzip programs
 
 ![image](https://github.com/nibsuoogee/multithreaded-rle-zip/assets/37696410/bdceb39c-0e36-4f5b-b49d-95e006630c16)
