@@ -1,4 +1,4 @@
-# multithreaded-rle-zip
+# Multithreaded RLE zip + unzip programs
 
 A command line utility C program which utilizes N threads (decided by available system cores) to compress M input files in an efficient, parallelized fashion. 
 
