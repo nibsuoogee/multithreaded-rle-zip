@@ -21,7 +21,7 @@ foo.txt
 bar.txt
 ```
 
-# Pseudocode/abstract representation of the finished pzip/punzip programs
+# Pseudocode/abstract representation
 
 ![image](https://github.com/nibsuoogee/multithreaded-rle-zip/assets/37696410/bdceb39c-0e36-4f5b-b49d-95e006630c16)
 
