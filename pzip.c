@@ -66,7 +66,7 @@ void *compress(void *args)
     pthread_mutex_lock(&mutex);
     threads_ready++;
     if (threads_ready < num_threads_glob)
-    { // makes sure all threads are ready.. REMOVE THIS
+    { // makes sure all threads are ready and all resources allocated
         while (threads_ready < num_threads_glob)
         {
             pthread_cond_wait(&cond, &mutex);
@@ -90,7 +90,7 @@ void *compress(void *args)
 
     int current_mvar = actual_args->range_in_mvars_array_start;
     int offset_in_mvar = actual_args->offset_in_first_addr;
-    printf("Thread %d actual_args->offset_into_next_mvar = %d\n", thread_id, offset_in_mvar);
+
     // make copies of contentious vars
     pthread_mutex_lock(&mutex);
     memcpy(&length, &actual_args->mvars[current_mvar].length, sizeof(size_t));
@@ -120,14 +120,11 @@ void *compress(void *args)
 
             // read first character
             prev_c = *(char *)(addr + offset - pa_offset + offset_in_mvar);
-            printf("T%d, prev_c = %c\n", thread_id, prev_c);
             count_c = 1;
             offset_in_mvar += 1;
-            printf("T%d, offset_in_mvar = %d\n", thread_id, offset_in_mvar);
             while (offset_in_mvar < length)
             {
                 c = *(char *)(addr + offset - pa_offset + offset_in_mvar);
-                printf("T%d, c = %c\n", thread_id, c);
                 if (c == prev_c)
                 { // if same, increment count_c
                     count_c++;
@@ -186,20 +183,15 @@ void *compress(void *args)
         {
             int limit_in_mvar = actual_args->bytes + offset_in_mvar; // thread has no more byte quota =
             // continue to next thread, store partial compression offset completed by current thread
-
             actual_args->bytes = 0;
 
             prev_c = *(char *)(addr + offset - pa_offset + offset_in_mvar);
-            printf("T%d, prev_c = %c\n", thread_id, prev_c);
-            
             count_c = 1;
             offset_in_mvar += 1;
-            printf("T%d, offset_in_mvar = %d\n", thread_id, offset_in_mvar);
-            printf("T%d, limit_in_mvar = %d\n", thread_id, limit_in_mvar);
+
             while (offset_in_mvar < limit_in_mvar)
             { // only compress until limit defined by insufficient quota for full compression
                 c = *(char *)(addr + offset - pa_offset + offset_in_mvar);
-                printf("T%d, c = %c\n", thread_id, c);
                 if (c == prev_c)
                 { // if same, increment count_c
                     count_c++;
@@ -230,7 +222,6 @@ void *compress(void *args)
                 }
                 offset_in_mvar++;
             }
-
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &count_c, sizeof(count_c));
             buffer_length += sizeof(count_c);
             memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &prev_c, sizeof(prev_c));
@@ -269,7 +260,7 @@ void *compress(void *args)
                 {
                     actual_args->mvars[i].finished_threads[0]++; // invalidate concatenation of chosen file for other threads
                     num_files_completed++;
-                    char outputFilename[256]; // Adjust the size as needed
+                    char outputFilename[256];
                     snprintf(outputFilename, sizeof(outputFilename), "%s.z", actual_args->mvars[i].file_name);
                     FILE *outputFile = fopen(outputFilename, "wb");
                     if (outputFile == NULL)
@@ -306,7 +297,7 @@ int main(int argc, char **argv, char *envp[])
     int num_files = argc - 1;
     num_files_glob = num_files;
     mmapped_vars mvars[num_files]; // store map and info for each input file
-    int num_threads = 1;// get_nprocs();
+    int num_threads = get_nprocs();
     num_threads_glob = num_threads;
     pthread_t fids[num_threads];
 
@@ -327,10 +318,10 @@ int main(int argc, char **argv, char *envp[])
         if (fd == -1)
             handle_error("open");
 
-        if (fstat(fd, &mvars[file - 1].sb) == -1) /* To obtain file size */
+        if (fstat(fd, &mvars[file - 1].sb) == -1)
             handle_error("fstat");
 
-        mvars[file - 1].offset = 0; // atoi(argv[2]);
+        mvars[file - 1].offset = 0;
         mvars[file - 1].pa_offset = mvars[file - 1].offset & ~(sysconf(_SC_PAGE_SIZE) - 1);
         /* offset for mmap() must be page aligned */
 
@@ -424,16 +415,7 @@ int main(int argc, char **argv, char *envp[])
                 mvars[current_mvar].finished_threads[i]--; // decrement number of threads that must work on this input file
             }
         }
-        
-        //printf("AAAAAAAAAAAAAAA Thread %d, bytes = %d\n", i, args->bytes);
-        /*
-        printf("Plan:\n");
-        for (int file = 0; file < num_files_glob; file++)
-        {
-            printf("completion file %d, thread %d: %d \n", file+1, i, mvars[file].finished_threads[i]);
-        }
-        printf("Plan ended\n");
-        */
+
         if (pthread_create(&fids[i], NULL, compress, args) != 0)
         {
             handle_error("pthread_create");
@@ -447,17 +429,6 @@ int main(int argc, char **argv, char *envp[])
             handle_error("pthread_join");
         }
     }
-
-    printf("Results:\n");
-    for (int thread = 0; thread < num_threads_glob; thread++)
-    {
-        for (int i = 0; i < num_files_glob; i++)
-        {
-            printf("completion file %d, thread %d: %d \n", i + 1, thread, mvars[i].finished_threads[thread]);
-        }
-        printf("\n");
-    }
-    printf("Results ended\n");
 
     for (int file = 1; file < argc; file++)
     {
