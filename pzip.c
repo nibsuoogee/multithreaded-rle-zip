@@ -306,7 +306,7 @@ int main(int argc, char **argv, char *envp[])
     int num_files = argc - 1;
     num_files_glob = num_files;
     mmapped_vars mvars[num_files]; // store map and info for each input file
-    int num_threads = 7;// get_nprocs();
+    int num_threads = 1;// get_nprocs();
     num_threads_glob = num_threads;
     pthread_t fids[num_threads];
 

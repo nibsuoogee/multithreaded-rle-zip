@@ -89,6 +89,7 @@ void *compress(void *args)
     int current_mvar = actual_args->range_in_mvars_array_start;
     int offset_in_mvar = actual_args->offset_in_first_addr;
     printf("Thread %d actual_args->offset_into_next_mvar = %d\n", thread_id, offset_in_mvar);
+    printf("T%d, bytes: %d\n", thread_id,(actual_args->bytes));
     // make copies of contentious vars
     pthread_mutex_lock(&mutex);
     memcpy(&length, &actual_args->mvars[current_mvar].length, sizeof(size_t));
@@ -127,12 +128,12 @@ void *compress(void *args)
                 for (size_t i = 0; i < count_c; i++) {
                     memcpy(actual_args->mvars[current_mvar].comp_result_buffers[thread_id] + buffer_length, &c, sizeof(c));
                     buffer_length += sizeof(c);
-                    printf("T%d buffer_length: %ld\n", thread_id, buffer_length);
+                    //printf("T%d buffer_length: %ld\n", thread_id, buffer_length);
                 }
                 // increase buffer size if close to full..
                 if (buffer_length > current_buffer_max * 0.7)
                 {
-                    printf("current_buffer_max: %ld, next current_buffer_max: %ld",current_buffer_max, (off_t)(current_buffer_max*iter_memory_increase_mult));
+                    printf("current_buffer_max: %ld, next current_buffer_max: %ld\n",current_buffer_max, (off_t)(current_buffer_max*iter_memory_increase_mult));
                     char *temp = realloc(actual_args->mvars[current_mvar].comp_result_buffers[thread_id], (off_t)(current_buffer_max * iter_memory_increase_mult) * sizeof(char));
                     if (temp == NULL)
                     {
@@ -186,7 +187,7 @@ void *compress(void *args)
                 }
                 if (buffer_length > current_buffer_max * 0.7)
                 { // if different, add count_c and c to output
-                                    printf("current_buffer_max: %ld, next current_buffer_max: %ld",current_buffer_max, (off_t)(current_buffer_max*iter_memory_increase_mult));
+                                    printf("current_buffer_max: %ld, next current_buffer_max: %ld\n",current_buffer_max, (off_t)(current_buffer_max*iter_memory_increase_mult));
 
                     char *temp = realloc(actual_args->mvars[current_mvar].comp_result_buffers[thread_id], (off_t)(current_buffer_max * iter_memory_increase_mult) * sizeof(char));
                     if (temp == NULL)
@@ -266,17 +267,16 @@ int main(int argc, char **argv, char *envp[])
     clock_t start, end;
     double cpu_time_used;
     start = clock();
-
     int fd;
     int num_files = argc - 1;
     num_files_glob = num_files;
     mmapped_vars mvars[num_files]; // store map and info for each input file
-    int num_threads = 7;// get_nprocs();
+    int num_threads = 1;// get_nprocs();
     num_threads_glob = num_threads;
     pthread_t fids[num_threads];
 
     int total_bytes = 0;
-    int bytes_per_thread, remainingBytes;
+    int remainingPairs, count_plus_ascii_encoded_pairs, encoded_pairs_per_thread;
 
     if (argc < 2)
     {
@@ -344,10 +344,11 @@ int main(int argc, char **argv, char *envp[])
         {
             mvars[file - 1].finished_threads[i] = 0;
         }
+        printf("File bytes: %ld\n", mvars[file - 1].sb.st_size);
     }
-
-    bytes_per_thread = total_bytes / num_threads;
-    remainingBytes = total_bytes % num_threads;
+    count_plus_ascii_encoded_pairs = total_bytes / 5;
+    encoded_pairs_per_thread = count_plus_ascii_encoded_pairs / num_threads;
+    remainingPairs = count_plus_ascii_encoded_pairs % num_threads;
 
     // create threads, give each a range for mvars, a pointer to mvars
     // their assigned byte amount, and offset within their first file
@@ -362,7 +363,8 @@ int main(int argc, char **argv, char *envp[])
         }
         args->thread_id = i;
         args->mvars = mvars;
-        args->bytes = bytes_per_thread + (i < remainingBytes ? 1 : 0);
+        args->bytes = (encoded_pairs_per_thread + (i < remainingPairs ? 1 : 0)) * 5;
+        printf("Thread %d assigned %d bytes\n", i, args->bytes);
         args->range_in_mvars_array_start = current_mvar;
         args->offset_in_first_addr = offset_into_next_mvar;
 
@@ -389,6 +391,7 @@ int main(int argc, char **argv, char *envp[])
                 mvars[current_mvar].finished_threads[i]--; // decrement number of threads that must work on this input file
             }
         }
+        
         if (pthread_create(&fids[i], NULL, compress, args) != 0)
         {
             handle_error("pthread_create");
